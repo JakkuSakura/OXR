@@ -257,6 +257,25 @@ oxr serve --config config.yaml \
 
 Once all three services are running, use the demo and parsing API in the same way as with Docker. See Sections 1.3 and 1.4.
 
+##### 1.2.3 Run on Apple Silicon (macOS, MLX)
+
+On macOS the recognition model can run in-process through [MLX](https://github.com/ml-explore/mlx)
+instead of a vLLM server, so only two processes are needed: the layout service
+above, and `oxr serve`.
+
+```Bash
+# pip install -e ".[mlx]"
+hf download SoMarkAI/OXR-1.0 --local-dir ./models/OXR-1.0
+
+oxr serve --config config.yaml --host 127.0.0.1 --port 8000 --workers 1 \
+  --oxr-model-backend mlx --oxr-model-path ./models/OXR-1.0
+```
+
+The same choice can be made in `config.yaml` (`oxr_model.backend: mlx` plus
+`oxr_model.model_path`). Weights are read from the checkpoint directly; no
+conversion step, and `oxr_model.url` is unused in this mode. bf16 by default
+(`oxr_model.dtype`), ~3.1 GB resident.
+
 #### 1.3 Open the Visual Demo
 
 Open http://localhost:8000/demo and upload a PDF or image. You can view the original file, Markdown preview, source, layout bounding boxes, and reading order, and download the Markdown.

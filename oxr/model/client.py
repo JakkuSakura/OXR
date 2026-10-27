@@ -8,44 +8,22 @@ import numpy as np
 from openai import AsyncOpenAI, DefaultAsyncHttpxClient
 
 from oxr.config.settings import OXRModelConfig, settings
+from oxr.model.base import (
+    DEFAULT_MODEL_OPTIONS,
+    ModelOutput,
+    resolve_model_options,
+)
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL_OPTIONS = {
-    "temperature": 0.0,
-    "top_p": 1.0,
-    "repetition_penalty": 1.0,
-}
-
-
-class ModelOutput(str):
-    """String-compatible model output with completion metadata attached."""
-
-    finish_reason: str
-    usage: Any
-
-    def __new__(
-        cls,
-        content: str,
-        *,
-        finish_reason: str = "unknown",
-        usage: Any = None,
-    ) -> "ModelOutput":
-        instance = super().__new__(cls, content)
-        instance.finish_reason = finish_reason
-        instance.usage = usage
-        return instance
-
-
-def resolve_model_options(model_options: Optional[Dict[str, Any]] = None) -> Dict[str, float]:
-    resolved = dict(DEFAULT_MODEL_OPTIONS)
-    if model_options:
-        resolved.update({
-            key: float(value)
-            for key, value in model_options.items()
-            if key in resolved and value is not None
-        })
-    return resolved
+__all__ = [
+    "DEFAULT_MODEL_OPTIONS",
+    "ModelClient",
+    "ModelOutput",
+    "OXRModelClient",
+    "model_client",
+    "resolve_model_options",
+]
 
 
 class OXRModelClient:
@@ -57,6 +35,9 @@ class OXRModelClient:
         self._request_loop: Optional[asyncio.AbstractEventLoop] = None
         self._request_limit: Optional[int] = None
         self._request_semaphore: Optional[asyncio.Semaphore] = None
+
+    async def warmup(self) -> None:
+        """Remote servers are warmed by their own process; nothing to do here."""
 
     @property
     def config(self) -> OXRModelConfig:
@@ -239,4 +220,3 @@ class OXRModelClient:
 
 
 ModelClient = OXRModelClient
-model_client = OXRModelClient()
