@@ -57,6 +57,7 @@ def hf_preprocess(image: PIL.Image.Image, min_pixels: int = 448 * 448, max_pixel
 
 
 def main() -> None:
+    """Diff the numpy patchification against transformers."""
     image = PIL.Image.open(sys.argv[1]).convert("RGB")
     mine, my_grid = preprocess(image)
     theirs, their_grid = hf_preprocess(image)

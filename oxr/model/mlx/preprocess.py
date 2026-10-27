@@ -59,6 +59,7 @@ def smart_resize(
 
 
 def _to_chw_normalized(image: PIL.Image.Image) -> np.ndarray:
+    """Convert to CHW and apply the SigLIP rescale and normalisation."""
     array = np.asarray(image, dtype=np.float32).transpose(2, 0, 1)
     return (array * _RESCALE - _MEAN) / _STD
 
@@ -97,6 +98,7 @@ def preprocess(
 
 
 def _cubic_weight(x: np.ndarray, a: float = -0.75) -> np.ndarray:
+    """Cubic convolution kernel used by bicubic resize (a = -0.75)."""
     abs_x = np.abs(x)
     near = (a + 2.0) * abs_x**3 - (a + 3.0) * abs_x**2 + 1.0
     far = a * abs_x**3 - 5.0 * a * abs_x**2 + 8.0 * a * abs_x - 4.0 * a

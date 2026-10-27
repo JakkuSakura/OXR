@@ -8,7 +8,6 @@ from pathlib import Path
 import mlx.core as mx
 import numpy as np
 import PIL.Image
-import torch
 
 from oxr.model.mlx.preprocess import preprocess, resize_position_embedding
 from tests.mlx.ref_torch import TorchOXR
@@ -17,6 +16,7 @@ DEFAULT_MODEL_DIR = Path(__file__).resolve().parents[2] / "models" / "OXR-1.0"
 
 
 def _report(name: str, mine: np.ndarray, theirs: np.ndarray) -> float:
+    """Print the numeric difference between two arrays."""
     diff = np.abs(mine.astype(np.float32) - theirs.astype(np.float32))
     scale = np.abs(theirs.astype(np.float32)).mean() + 1e-6
     print(f"{name:24s} max={diff.max():.3e}  mean={diff.mean():.3e}  rel={diff.max() / scale:.3e}")
@@ -24,6 +24,7 @@ def _report(name: str, mine: np.ndarray, theirs: np.ndarray) -> float:
 
 
 def main() -> None:
+    """Compare preprocessing, vision, visual tokens and logits."""
     parser = argparse.ArgumentParser()
     parser.add_argument("image", type=Path)
     parser.add_argument("--model-dir", type=Path, default=DEFAULT_MODEL_DIR)

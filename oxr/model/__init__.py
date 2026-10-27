@@ -17,6 +17,7 @@ from oxr.model.client import OXRModelClient
 
 
 def build_model(config: Optional[OXRModelConfig] = None) -> OXRModelBackend:
+    """Instantiate the backend named by `oxr_model.backend`."""
     resolved = config or settings.oxr_model
     if resolved.backend == "mlx":
         # Imported lazily so the mlx extra stays optional on CUDA/CPU hosts.

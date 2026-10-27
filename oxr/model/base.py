@@ -33,6 +33,7 @@ class ModelOutput(str):
         finish_reason: str = "unknown",
         usage: Any = None,
     ) -> "ModelOutput":
+        """Build a string whose completion metadata rides along."""
         instance = super().__new__(cls, content)
         instance.finish_reason = finish_reason
         instance.usage = usage
@@ -42,6 +43,7 @@ class ModelOutput(str):
 def resolve_model_options(
     model_options: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, float]:
+    """Merge caller options over the sampling defaults."""
     resolved = dict(DEFAULT_MODEL_OPTIONS)
     if model_options:
         resolved.update(
@@ -62,38 +64,47 @@ class OXRModelBackend(Protocol):
         """Prepare the model before the first request (no-op for remote servers)."""
 
     def get_request_semaphore(self) -> asyncio.Semaphore:
-        """Shared in-flight budget for recognition and reading-order calls."""
+        """Return the shared in-flight budget for model calls."""
 
     async def recognize_text(
         self, image: np.ndarray, model_options: Optional[Dict[str, Any]] = None
-    ) -> ModelOutput: ...
+    ) -> ModelOutput:
+        """Recognize body text."""
 
     async def recognize_formula(
         self, image: np.ndarray, model_options: Optional[Dict[str, Any]] = None
-    ) -> ModelOutput: ...
+    ) -> ModelOutput:
+        """Recognize a formula as LaTeX."""
 
     async def recognize_table(
         self, image: np.ndarray, model_options: Optional[Dict[str, Any]] = None
-    ) -> ModelOutput: ...
+    ) -> ModelOutput:
+        """Recognize a table as HTML or Markdown."""
 
     async def recognize_code(
         self, image: np.ndarray, model_options: Optional[Dict[str, Any]] = None
-    ) -> ModelOutput: ...
+    ) -> ModelOutput:
+        """Recognize a code block."""
 
     async def recognize_chemical_structure(
         self, image: np.ndarray, model_options: Optional[Dict[str, Any]] = None
-    ) -> ModelOutput: ...
+    ) -> ModelOutput:
+        """Recognize a chemical structure as SMILES."""
 
     async def recognize_whole_page(
         self, image: np.ndarray, model_options: Optional[Dict[str, Any]] = None
-    ) -> ModelOutput: ...
+    ) -> ModelOutput:
+        """Recognize a page without layout analysis."""
 
     async def analyze_layout(
         self, image: np.ndarray, model_options: Optional[Dict[str, Any]] = None
-    ) -> ModelOutput: ...
+    ) -> ModelOutput:
+        """Run the diagnostic layout prompt."""
 
     async def request_reading_order(
         self, prompt: str, image: np.ndarray, max_tokens: int
-    ) -> ModelOutput: ...
+    ) -> ModelOutput:
+        """Order the detected boxes of one page."""
 
-    async def aclose(self) -> None: ...
+    async def aclose(self) -> None:
+        """Release any resources held by the backend."""

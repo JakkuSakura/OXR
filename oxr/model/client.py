@@ -21,7 +21,6 @@ __all__ = [
     "ModelClient",
     "ModelOutput",
     "OXRModelClient",
-    "model_client",
     "resolve_model_options",
 ]
 
@@ -30,6 +29,7 @@ class OXRModelClient:
     """Persistent OpenAI-compatible client used only for OXR requests."""
 
     def __init__(self, config: Optional[OXRModelConfig] = None):
+        """Store the optional config and lazily built HTTP client."""
         self._config = config
         self._client: Optional[AsyncOpenAI] = None
         self._request_loop: Optional[asyncio.AbstractEventLoop] = None
@@ -41,10 +41,12 @@ class OXRModelClient:
 
     @property
     def config(self) -> OXRModelConfig:
+        """Resolved model configuration for this client."""
         return self._config or settings.oxr_model
 
     @property
     def client(self) -> Optional[AsyncOpenAI]:
+        """Create the OpenAI-compatible client on first use."""
         if self._client is None and self.config.url:
             self._client = AsyncOpenAI(
                 base_url=self.config.url,
@@ -70,6 +72,7 @@ class OXRModelClient:
         return self._request_semaphore
 
     async def aclose(self) -> None:
+        """Close the underlying HTTP client."""
         try:
             if self._client is not None:
                 await self._client.close()
@@ -80,12 +83,14 @@ class OXRModelClient:
             self._request_semaphore = None
 
     def _encode_image(self, image: np.ndarray) -> str:
+        """Encode a BGR page crop as PNG bytes."""
         success, buffer = cv2.imencode(".png", image)
         if not success:
             raise ValueError("Unable to encode image as PNG.")
         return base64.b64encode(buffer).decode("utf-8")
 
     def _image_to_data_url(self, image: np.ndarray) -> str:
+        """Wrap PNG bytes in a data URL."""
         return f"data:image/png;base64,{self._encode_image(image)}"
 
     async def _call_vision_model(
@@ -96,6 +101,7 @@ class OXRModelClient:
         model_options: Optional[Dict[str, Any]] = None,
         max_tokens: Optional[int] = None,
     ) -> str:
+        """Send one image and prompt to the model service."""
         if not self.client:
             raise RuntimeError("OXR model URL is not configured.")
         if image is None:
@@ -147,6 +153,7 @@ class OXRModelClient:
         )
 
     async def recognize_text(self, image: np.ndarray, model_options: Optional[Dict[str, Any]] = None) -> str:
+        """Recognize body text."""
         from oxr.model.prompts import PROMPT_TEXT_RECOGNITION
         return await self._call_vision_model(
             prompt=PROMPT_TEXT_RECOGNITION,
@@ -156,6 +163,7 @@ class OXRModelClient:
         )
 
     async def recognize_formula(self, image: np.ndarray, model_options: Optional[Dict[str, Any]] = None) -> str:
+        """Recognize a formula as LaTeX."""
         from oxr.model.prompts import PROMPT_FORMULA_RECOGNITION
         return await self._call_vision_model(
             prompt=PROMPT_FORMULA_RECOGNITION,
@@ -165,6 +173,7 @@ class OXRModelClient:
         )
 
     async def recognize_table(self, image: np.ndarray, model_options: Optional[Dict[str, Any]] = None) -> str:
+        """Recognize a table as HTML."""
         from oxr.model.prompts import PROMPT_TABLE_RECOGNITION
         return await self._call_vision_model(
             prompt=PROMPT_TABLE_RECOGNITION,
@@ -174,6 +183,7 @@ class OXRModelClient:
         )
 
     async def recognize_code(self, image: np.ndarray, model_options: Optional[Dict[str, Any]] = None) -> str:
+        """Recognize a code block."""
         from oxr.model.prompts import PROMPT_CODE_RECOGNITION
         return await self._call_vision_model(
             prompt=PROMPT_CODE_RECOGNITION,
@@ -197,6 +207,7 @@ class OXRModelClient:
         image: np.ndarray,
         model_options: Optional[Dict[str, Any]] = None,
     ) -> str:
+        """Recognize a page without layout analysis."""
         from oxr.model.prompts import PROMPT_WHOLE_PAGE_RECOGNITION
         return await self._call_vision_model(
             prompt=PROMPT_WHOLE_PAGE_RECOGNITION,
@@ -210,6 +221,7 @@ class OXRModelClient:
         image: np.ndarray,
         model_options: Optional[Dict[str, Any]] = None,
     ) -> str:
+        """Recognize a chemical structure as SMILES."""
         from oxr.model.prompts import PROMPT_CHEMICAL_STRUCTURE_RECOGNITION
         return await self._call_vision_model(
             prompt=PROMPT_CHEMICAL_STRUCTURE_RECOGNITION,

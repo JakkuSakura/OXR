@@ -26,6 +26,11 @@ def render_chat(prompt: str, with_image: bool = True) -> str:
     return f"<|im_start|>user\n{content}<|im_end|>\n<|im_start|>assistant\n"
 
 
+def finish_reason_for(next_id: int) -> str:
+    """EOS ends generation cleanly, even when it arrives at the token cap."""
+    return "stop" if next_id in EOS_IDS else "length"
+
+
 @dataclass(frozen=True)
 class Generation:
     text: str
@@ -34,6 +39,7 @@ class Generation:
 
 class OXRRunner:
     def __init__(self, model_dir: Path | str, dtype: str = "bfloat16"):
+        """Load the checkpoint and tokenizer into MLX."""
         if dtype not in DTYPES:
             raise ValueError(f"unsupported dtype {dtype!r}; expected one of {', '.join(DTYPES)}")
         self.model_dir = Path(model_dir)
@@ -45,6 +51,7 @@ class OXRRunner:
 
     # ---- input assembly -------------------------------------------------
     def _tokenize(self, text: str) -> list[int]:
+        """Tokenize text, marking image placeholders."""
         chunks = [self.tokenizer(chunk, add_special_tokens=False).input_ids for chunk in text.split(IMAGE_TOKEN)]
         ids = list(chunks[0])
         for chunk in chunks[1:]:
@@ -53,6 +60,7 @@ class OXRRunner:
         return ids
 
     def encode(self, image: PIL.Image.Image, prompt: str) -> tuple[np.ndarray, mx.array]:
+        """Build the prompt ids and the image's visual embeddings."""
         patches, grid_thw = preprocess(image)
         atoms = (grid_thw[0] * grid_thw[1] * grid_thw[2]) // 4
         ids = self._tokenize(render_chat(prompt))
@@ -76,6 +84,7 @@ class OXRRunner:
         max_tokens: int = 4096,
         repetition_penalty: float = 1.0,
     ) -> Generation:
+        """Greedy decode one prompt and return text plus finish reason."""
         ids, visual = self.encode(image, prompt)
         mx.eval(visual)
 
@@ -95,7 +104,7 @@ class OXRRunner:
 
         return Generation(
             text=self.tokenizer.decode(produced, skip_special_tokens=True),
-            finish_reason="length" if len(produced) >= max_tokens else "stop",
+            finish_reason=finish_reason_for(next_id),
         )
 
 

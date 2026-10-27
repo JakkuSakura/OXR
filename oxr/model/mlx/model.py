@@ -50,19 +50,23 @@ class TextConfig:
 
 
 def _linear(x: mx.array, weight: mx.array, bias: mx.array | None = None) -> mx.array:
+    """Apply a linear projection with an optional bias."""
     out = x @ weight.T
     return out if bias is None else out + bias
 
 
 def _layer_norm(x: mx.array, weight: mx.array, bias: mx.array, eps: float) -> mx.array:
+    """Apply LayerNorm over the last axis."""
     return mx.fast.layer_norm(x, weight, bias, eps)
 
 
 def _rms_norm(x: mx.array, weight: mx.array, eps: float) -> mx.array:
+    """Apply RMSNorm over the last axis."""
     return mx.fast.rms_norm(x, weight, eps)
 
 
 def _rotate_half(x: mx.array) -> mx.array:
+    """Rotate the two halves of the last axis, as in HF RoPE."""
     half = x.shape[-1] // 2
     return mx.concatenate([-x[..., half:], x[..., :half]], axis=-1)
 
@@ -78,6 +82,7 @@ def _text_rope(x: mx.array, offset: int, head_dim: int, base: float) -> mx.array
 
 
 def _gelu_approx(x: mx.array) -> mx.array:
+    """GELU with the tanh approximation used by SigLIP2."""
     return 0.5 * x * (1.0 + mx.tanh(math.sqrt(2.0 / math.pi) * (x + 0.044715 * x**3)))
 
 
@@ -157,6 +162,7 @@ def _positional(
     prefix: str,
     grid_thw: tuple[int, int, int],
 ) -> mx.array:
+    """Interpolate the positional grid for this image and reshape it."""
     from .preprocess import resize_position_embedding
 
     _, grid_h, grid_w = grid_thw
@@ -166,6 +172,7 @@ def _positional(
 
 
 def _segment_mask(cu_seqlens: Iterable[int]) -> mx.array:
+    """Block-diagonal additive mask for variable-length segments."""
     bounds = list(cu_seqlens)
     length = bounds[-1]
     mask = np.full((length, length), -1e9, dtype=np.float32)
@@ -178,6 +185,7 @@ class VisionTower:
     """SigLIP2-NaViT encoder (27 windowed layers, 1152 hidden, 16 heads)."""
 
     def __init__(self, weights: dict[str, mx.array], prefix: str, config: VisionConfig):
+        """Bind the vision weights for one prefix."""
         self.config = config
         self.prefix = prefix
         self.weights = weights
@@ -186,6 +194,7 @@ class VisionTower:
         self.patch_bias = weights.get(f"{prefix}.embeddings.patch_embedding.bias")
 
     def __call__(self, patches: np.ndarray, grid_thw: tuple[int, int, int]) -> mx.array:
+        """Encode patch vectors into per-patch features."""
         config = self.config
         prefix = self.prefix
         weights = self.weights
@@ -240,6 +249,7 @@ class VisionTower:
         sin: mx.array,
         mask: mx.array,
     ) -> mx.array:
+        """Windowed self-attention with 2D RoPE."""
         config = self.config
         weights = self.weights
         seq_len = x.shape[0]
@@ -277,12 +287,14 @@ class VisualTokenizer:
     """Vision tower + visual-vocabulary head -> soft visual tokens."""
 
     def __init__(self, weights: dict[str, mx.array], prefix: str = "visual_tokenizer"):
+        """Bind the tower and the visual-vocabulary head."""
         self.weights = weights
         self.prefix = prefix
         self.vit = VisionTower(weights, f"{prefix}.vit.vision_model", VisionConfig())
         self.visual_vocab_size = weights["vte.weight"].shape[0]
 
     def __call__(self, patches: np.ndarray, grid_thw: tuple[int, int, int]) -> mx.array:
+        """Map an image to soft visual tokens."""
         features = self.vit(patches, grid_thw)
         unit = self.vit.config.hidden_stride**2
         features = features.reshape(features.shape[0] // unit, -1)
@@ -308,6 +320,7 @@ class VisualTokenizer:
 
 class Qwen3:
     def __init__(self, weights: dict[str, mx.array], prefix: str, config: TextConfig):
+        """Bind the decoder weights for one prefix."""
         self.config = config
         self.prefix = prefix
         self.weights = weights
@@ -316,6 +329,7 @@ class Qwen3:
         self.lm_head = weights.get(f"{prefix}.lm_head.weight", self.embed)
 
     def __call__(self, inputs: mx.array, cache: list | None, offset: int) -> mx.array:
+        """Run the decoder over embeddings and return next-token logits."""
         hidden = inputs
         for index in range(self.config.num_layers):
             hidden = self._layer(hidden, index, cache, offset)
@@ -323,6 +337,7 @@ class Qwen3:
         return hidden @ self.lm_head.T
 
     def _layer(self, x: mx.array, index: int, cache: list | None, offset: int) -> mx.array:
+        """One decoder block: attention, MLP and their residuals."""
         config = self.config
         base = f"{self.prefix}.model.layers.{index}"
         weights = self.weights
@@ -382,6 +397,7 @@ class OXR:
     """Full model: image -> soft visual tokens -> Qwen3 embeddings -> next-token logits."""
 
     def __init__(self, weights: dict[str, mx.array]):
+        """Assemble the visual tokenizer, decoder and embedding table."""
         self.weights = weights
         self.visual_tokenizer = VisualTokenizer(weights)
         self.llm = Qwen3(weights, "llm", TextConfig())
@@ -392,6 +408,7 @@ class OXR:
         self.indicator_embeds = self.vte[mx.array(list(range(tail, self.vte.shape[0])))]
 
     def image_embeds(self, patches: np.ndarray, grid_thw: tuple[int, int, int]) -> mx.array:
+        """Project an image's soft tokens into the LM embedding space."""
         tokens = self.visual_tokenizer(patches, grid_thw)
         return tokens @ self.vte
 
@@ -403,6 +420,7 @@ class OXR:
         atom = 0
 
         def flush_text() -> None:
+            """Emit buffered text tokens as embeddings."""
             if text_buffer:
                 parts.append(self.llm.embed[mx.array(np.array(text_buffer, dtype=np.int32))])
                 text_buffer.clear()

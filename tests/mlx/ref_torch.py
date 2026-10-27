@@ -18,6 +18,7 @@ DTYPE = torch.float32
 
 class TorchOXR:
     def __init__(self, model_path: str):
+        """Load the checkpoint in float32 on CPU."""
         self.w = {k: v.to(DTYPE) for k, v in load_file(model_path).items()}
         self.hidden_size = 1152
         self.heads = 16
@@ -30,6 +31,7 @@ class TorchOXR:
 
     # ---------------- vision ----------------
     def position_embedding(self, grid_h: int, grid_w: int) -> torch.Tensor:
+        """Interpolate the positional grid like the reference."""
         table = self.w["visual_tokenizer.vit.vision_model.embeddings.position_embedding.weight"]
         size = int(round(math.sqrt(table.shape[0])))
         pe = table.reshape(size, size, -1).unsqueeze(0).permute(0, 3, 1, 2)
@@ -51,6 +53,7 @@ class TorchOXR:
         grid_thw: tuple[int, int, int],
         window_index: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Build 2D rotary frequencies in window order."""
         _, grid_h, grid_w = grid_thw
         dim = self.hidden_size // self.heads // 2
         inv_freq = 1.0 / (10000.0 ** (torch.arange(0, dim, 2, dtype=torch.float32) / dim))
@@ -64,6 +67,7 @@ class TorchOXR:
         return angles.cos(), angles.sin()
 
     def _window_plan(self, grid_thw: tuple[int, int, int]):
+        """Return the window permutation and its sequence lengths."""
         grid_t, grid_h, grid_w = grid_thw
         units = self.window_size // self.hidden_stride // self.patch_size
         llm_h, llm_w = grid_h // self.hidden_stride, grid_w // self.hidden_stride
@@ -84,6 +88,7 @@ class TorchOXR:
 
     @staticmethod
     def _mask(cu_seqlens: list[int]) -> torch.Tensor:
+        """Block-diagonal additive mask for the given segments."""
         length = cu_seqlens[-1]
         mask = torch.full((length, length), -1e9)
         for start, end in zip(cu_seqlens[:-1], cu_seqlens[1:]):
@@ -91,6 +96,7 @@ class TorchOXR:
         return mask
 
     def vision(self, patches: np.ndarray, grid_thw: tuple[int, int, int]) -> torch.Tensor:
+        """Run the vision tower on patch vectors."""
         w = self.w
         prefix = "visual_tokenizer.vit.vision_model"
         patch_w = w[f"{prefix}.embeddings.patch_embedding.weight"]
@@ -115,6 +121,7 @@ class TorchOXR:
             v = (h @ w[f"{base}.self_attn.v_proj.weight"].T + w[f"{base}.self_attn.v_proj.bias"]).reshape(-1, self.heads, head_dim)
 
             def rotate(t):
+                """Rotate the two halves of the last axis."""
                 half = t.shape[-1] // 2
                 return torch.cat([-t[..., half:], t[..., :half]], dim=-1)
 
@@ -139,6 +146,7 @@ class TorchOXR:
         return x
 
     def visual_tokens(self, patches: np.ndarray, grid_thw: tuple[int, int, int]) -> torch.Tensor:
+        """Map an image to soft visual tokens."""
         features = self.vision(patches, grid_thw)
         features = features.reshape(features.shape[0] // self.merge_unit, -1)
         head = "visual_tokenizer.head"
@@ -149,6 +157,7 @@ class TorchOXR:
 
     # ---------------- text ----------------
     def logits(self, ids: np.ndarray, visual: torch.Tensor | None) -> torch.Tensor:
+        """Run the decoder over a prompt and return logits."""
         w = self.w
         ids_t = torch.from_numpy(ids.astype(np.int64))[None]
         embeds = w["llm.model.embed_tokens.weight"][torch.clamp(ids_t, min=0)]
@@ -171,6 +180,7 @@ class TorchOXR:
             k = F.rms_norm(k, (head_dim,), w[f"{base}.self_attn.k_norm.weight"], self.eps)
 
             def rotate(t):
+                """Rotate the two halves of the last axis."""
                 half = t.shape[-1] // 2
                 return torch.cat([-t[..., half:], t[..., :half]], dim=-1)
 
